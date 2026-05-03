@@ -1,4 +1,4 @@
-# da-decision-tree
+# DA-decision-tree
 
 一个基于 CeTZ 的 Typst 决策树小库：提供数据结构解析（build-tree）、简单布局（layout-tree）与绘制（decision-tree）。
 
@@ -8,7 +8,7 @@
 
 ```typst
 #import "@preview/cetz:0.5.0": canvas
-#import "./da-decision-tree/lib.typ": decision-tree, node-opt
+#import "./DA-decision-tree/lib.typ": decision-tree, node-opt
 
 #canvas(length: 1cm, {
   let root = (
