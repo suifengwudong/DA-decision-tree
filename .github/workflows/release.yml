@@ -37,7 +37,12 @@ jobs:
         run: |
           PKG_DIR="out/${PKG_NAME}/${PKG_VERSION}"
           mkdir -p "${PKG_DIR}"
-          cp typst.toml lib.typ README.md LICENSE CHANGELOG.md "${PKG_DIR}/"
+          # Required files
+          cp typst.toml lib.typ "${PKG_DIR}/"
+          # Recommended files — copy only if they exist
+          for f in README.md LICENSE CHANGELOG.md; do
+            [ -f "${f}" ] && cp "${f}" "${PKG_DIR}/" || echo "Warning: ${f} not found, skipping"
+          done
 
       - name: Checkout package registry fork
         uses: actions/checkout@v4
