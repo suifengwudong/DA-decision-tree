@@ -1,0 +1,68 @@
+name: Release to Typst Package Registry
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+env:
+  # Your fork of typst/packages (https://github.com/typst/packages)
+  # Make sure you have push access to this repository.
+  # Set the REGISTRY_TOKEN secret to a PAT with write access to REGISTRY_REPO.
+  REGISTRY_REPO: suifengwudong/packages
+  # Path prefix within the registry repo — keep as-is for the Typst preview registry
+  PATH_PREFIX: packages/preview
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract package metadata
+        run: |
+          PKG_NAME=$(grep '^name' typst.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+          PKG_VERSION=$(grep '^version' typst.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+          echo "PKG_NAME=${PKG_NAME}" >> "${GITHUB_ENV}"
+          echo "PKG_VERSION=${PKG_VERSION}" >> "${GITHUB_ENV}"
+
+      - name: Verify tag matches package version
+        run: |
+          if [[ "${GITHUB_REF_NAME}" != "v${PKG_VERSION}" ]]; then
+            echo "Package version ${PKG_VERSION} does not match release tag ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+
+      - name: Assemble package directory
+        run: |
+          PKG_DIR="out/${PKG_NAME}/${PKG_VERSION}"
+          mkdir -p "${PKG_DIR}"
+          # Required files
+          cp typst.toml lib.typ "${PKG_DIR}/"
+          # Recommended files — copy only if they exist
+          for f in README.md LICENSE CHANGELOG.md; do
+            [ -f "${f}" ] && cp "${f}" "${PKG_DIR}/" || echo "Warning: ${f} not found, skipping"
+          done
+
+      - name: Checkout package registry fork
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.REGISTRY_REPO }}
+          token: ${{ secrets.REGISTRY_TOKEN }}
+          path: typst-packages
+
+      - name: Push package to registry fork
+        run: |
+          mkdir -p "typst-packages/${{ env.PATH_PREFIX }}/${PKG_NAME}"
+          mv "out/${PKG_NAME}/${PKG_VERSION}" "typst-packages/${{ env.PATH_PREFIX }}/${PKG_NAME}/"
+
+          GIT_USER_NAME="$(git log -1 --pretty=format:'%an')"
+          GIT_USER_EMAIL="$(git log -1 --pretty=format:'%ae')"
+
+          cd typst-packages
+          git config user.name "${GIT_USER_NAME}"
+          git config user.email "${GIT_USER_EMAIL}"
+          git checkout -b "${PKG_NAME}-${PKG_VERSION}"
+          git add .
+          git commit -m "${PKG_NAME}:${PKG_VERSION}"
+          git push --set-upstream origin "${PKG_NAME}-${PKG_VERSION}"
