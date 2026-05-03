@@ -1,4 +1,4 @@
-// da-decision-tree — Decision tree library for Typst using CeTZ
+// DA-decision-tree — Decision tree library for Typst using CeTZ
 // Modules: data structures, tree building, layout, rendering, high-level API.
 
 #import "@preview/cetz:0.5.0": canvas, draw
