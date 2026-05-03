@@ -58,19 +58,10 @@
   label-offset-top: 10pt,          // offset for "top" node labels
   label-offset-right: 10pt,        // offset for "right" node labels
   label-offset-edge: 6pt,          // offset perpendicular to edge for edge labels
-
-  edge-label-orientation: "horizontal",
+  mark-offset: 7pt,                // offset for node mark symbols
 )
 
-#let merge-config(user-config) = {
-  let merged = default-tree-config
-  if type(user-config) == "dictionary" {
-    for (key, value) in user-config {
-      merged.insert(key, value)
-    }
-  }
-  merged
-}
+#let merge-config(user-config) = default-tree-config + if type(user-config) == "dictionary" { user-config } else { (:) }
 
 // Assign positions to nodes based on depth and sibling order
 #let layout-tree(node, config, path: "0", depth: 0, slot-start: 0) = {
@@ -124,7 +115,7 @@
   }
 }
 
-// Draw all edges with optional labels
+// Draw all edges with optional labels and marks
 #let draw-edges(node-positions, layout-edges, edges, config) = {
   let id-to-pos = (:)
   for item in node-positions {
@@ -157,13 +148,16 @@
           draw.content((mid-x, mid-y + offset), label-body, anchor: "south", wrap: text.with(color))
         } else if dir == "below" {
           draw.content((mid-x, mid-y - offset), label-body, anchor: "north", wrap: text.with(color))
+        } else if dir == "mark" {
+          // Mark symbol drawn directly on the edge (e.g. "★" for optimal, "//" for pruned)
+          draw.content((mid-x, mid-y), label-body, anchor: "center", wrap: text.with(color))
         }
       }
     }
   }
 }
 
-// Draw all node labels
+// Draw all node labels and marks
 #let draw-labels(node-positions, config) = {
   for node-item in node-positions {
     let opt = node-item.opt
@@ -176,50 +170,58 @@
         draw.content((node-item.x + config.label-offset-right, node-item.y), label-body, anchor: "west", wrap: text.with(color))
       }
     }
+    // Draw optional mark symbol at top-right of the node
+    if opt.mark != none {
+      draw.content(
+        (node-item.x + config.mark-offset, node-item.y + config.mark-offset),
+        opt.mark,
+        anchor: "south-west",
+        wrap: text.with(opt.mark-color),
+      )
+    }
   }
 }
 
 // ===== DSL CONSTRUCTORS =====
 
 // Leaf node: a terminal node with a value label.
-// Usage: leaf("id", [label])
-#let leaf(id, label, color: black) = (
+// Usage: leaf("id", [label])  — optional: mark: [★], mark-color: red
+#let leaf(id, label, color: black, mark: none, mark-color: red) = (
   id: id,
-  opt: node-opt(kind: "leaf", labels: (top: (label, color))),
+  opt: node-opt(kind: "leaf", labels: (top: (label, color)), mark: mark, mark-color: mark-color),
   children: (),
 )
 
 // Decision node (square): children are decision-edge items representing choices.
-// Usage: decision("id", [label], decision-edge(...), decision-edge(...))
-#let decision(id, label, ..branches, color: black) = (
+// Usage: decision("id", [label], decision-edge(...), ...)  — optional: mark: [★]
+#let decision(id, label, ..branches, color: black, mark: none, mark-color: red) = (
   id: id,
-  opt: node-opt(kind: "decision", labels: (top: (label, color))),
+  opt: node-opt(kind: "decision", labels: (top: (label, color)), mark: mark, mark-color: mark-color),
   children: branches.pos(),
 )
 
 // Event node (circle): children are event-edge items representing random outcomes.
-// Usage: event("id", [label], event-edge(...), event-edge(...))
-#let event(id, label, ..outcomes, color: black) = (
+// Usage: event("id", [label], event-edge(...), ...)  — optional: mark: [!]
+#let event(id, label, ..outcomes, color: black, mark: none, mark-color: red) = (
   id: id,
-  opt: node-opt(kind: "event", labels: (top: (label, color))),
+  opt: node-opt(kind: "event", labels: (top: (label, color)), mark: mark, mark-color: mark-color),
   children: outcomes.pos(),
 )
 
 // Decision edge: links a decision node to a child via a named choice label.
-// Usage: decision-edge([Choice label], child-node)
-#let decision-edge(label, child, color: black) = (
-  edge-labels: (above: (label, color)),
-  child-desc: child,
-)
+// Usage: decision-edge([Choice], child)  — optional: mark: [★] for optimal, mark: [//] for pruned
+#let decision-edge(label, child, color: black, mark: none, mark-color: black) = {
+  let edge-labels = (above: (label, color))
+  if mark != none { edge-labels.insert("mark", (mark, mark-color)) }
+  (edge-labels: edge-labels, child-desc: child)
+}
 
 // Event edge: links an event node to a child with a probability and optional description.
-// Usage: event-edge(0.6, child-node) or event-edge(0.6, child-node, label: [Outcome])
-#let event-edge(prob, child, label: none, prob-color: gray, label-color: black) = {
-  let prob-content = [#prob]
-  let edge-labels = (below: (prob-content, prob-color))
-  if label != none {
-    edge-labels.insert("above", (label, label-color))
-  }
+// Usage: event-edge(0.6, child)  — optional: label: [Outcome], mark: [//]
+#let event-edge(prob, child, label: none, prob-color: gray, label-color: black, mark: none, mark-color: black) = {
+  let edge-labels = (below: ([#prob], prob-color))
+  if label != none { edge-labels.insert("above", (label, label-color)) }
+  if mark != none { edge-labels.insert("mark", (mark, mark-color)) }
   (edge-labels: edge-labels, child-desc: child)
 }
 
