@@ -2,7 +2,15 @@ name: Release to Typst Package Registry
 
 on:
   push:
-    tags: [ 'v*' ]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
 
 env:
   # Your fork of typst/packages (https://github.com/typst/packages)
@@ -21,13 +29,23 @@ jobs:
 
       - name: Extract package metadata
         run: |
-          PKG_NAME=$(grep '^name' typst.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-          PKG_VERSION=$(grep '^version' typst.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-          echo "PKG_NAME=${PKG_NAME}" >> "${GITHUB_ENV}"
-          echo "PKG_VERSION=${PKG_VERSION}" >> "${GITHUB_ENV}"
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import pathlib
+          import tomllib
+
+          data = tomllib.loads(pathlib.Path("typst.toml").read_text(encoding="utf-8"))
+          pkg = data["package"]
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
+              f.write(f"PKG_NAME={pkg['name']}\n")
+              f.write(f"PKG_VERSION={pkg['version']}\n")
+          PY
 
       - name: Verify tag matches package version
         run: |
+          set -euo pipefail
           if [[ "${GITHUB_REF_NAME}" != "v${PKG_VERSION}" ]]; then
             echo "Package version ${PKG_VERSION} does not match release tag ${GITHUB_REF_NAME}" >&2
             exit 1
@@ -35,13 +53,18 @@ jobs:
 
       - name: Assemble package directory
         run: |
+          set -euo pipefail
           PKG_DIR="out/${PKG_NAME}/${PKG_VERSION}"
           mkdir -p "${PKG_DIR}"
           # Required files
           cp typst.toml lib.typ "${PKG_DIR}/"
           # Recommended files — copy only if they exist
           for f in README.md LICENSE CHANGELOG.md; do
-            [ -f "${f}" ] && cp "${f}" "${PKG_DIR}/" || echo "Warning: ${f} not found, skipping"
+            if [[ -f "${f}" ]]; then
+              cp "${f}" "${PKG_DIR}/"
+            else
+              echo "Warning: ${f} not found, skipping"
+            fi
           done
 
       - name: Checkout package registry fork
@@ -53,16 +76,81 @@ jobs:
 
       - name: Push package to registry fork
         run: |
-          mkdir -p "typst-packages/${{ env.PATH_PREFIX }}/${PKG_NAME}"
-          mv "out/${PKG_NAME}/${PKG_VERSION}" "typst-packages/${{ env.PATH_PREFIX }}/${PKG_NAME}/"
+          set -euo pipefail
+
+          BRANCH="${PKG_NAME}-${PKG_VERSION}"
+          TARGET_PARENT="typst-packages/${PATH_PREFIX}/${PKG_NAME}"
+          TARGET_DIR="${TARGET_PARENT}/${PKG_VERSION}"
+
+          if [[ -e "${TARGET_DIR}" ]]; then
+            echo "Target already exists in registry fork: ${TARGET_DIR}" >&2
+            exit 1
+          fi
+
+          mkdir -p "${TARGET_PARENT}"
+          mv "out/${PKG_NAME}/${PKG_VERSION}" "${TARGET_PARENT}/"
 
           GIT_USER_NAME="$(git log -1 --pretty=format:'%an')"
           GIT_USER_EMAIL="$(git log -1 --pretty=format:'%ae')"
 
           cd typst-packages
+
+          DEFAULT_BRANCH="$(git remote show origin | sed -n 's/.*HEAD branch: //p')"
+          DEFAULT_BRANCH="${DEFAULT_BRANCH:-main}"
+
           git config user.name "${GIT_USER_NAME}"
           git config user.email "${GIT_USER_EMAIL}"
-          git checkout -b "${PKG_NAME}-${PKG_VERSION}"
+
+          if ! git fetch origin "${DEFAULT_BRANCH}"; then
+            DEFAULT_BRANCH=main
+            git fetch origin "${DEFAULT_BRANCH}" || (DEFAULT_BRANCH=master && git fetch origin "${DEFAULT_BRANCH}")
+          fi
+
+          git checkout -B "${DEFAULT_BRANCH}" "origin/${DEFAULT_BRANCH}"
+
+          git checkout -b "${BRANCH}"
           git add .
           git commit -m "${PKG_NAME}:${PKG_VERSION}"
-          git push --set-upstream origin "${PKG_NAME}-${PKG_VERSION}"
+          git push --set-upstream origin "${BRANCH}"
+
+      - name: Create PR to typst/packages
+        env:
+          GH_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          REGISTRY_OWNER="${REGISTRY_REPO%%/*}"
+          BRANCH="${PKG_NAME}-${PKG_VERSION}"
+
+          existing="$(gh pr list --repo typst/packages --head "${REGISTRY_OWNER}:${BRANCH}" --json url --jq '.[0].url' || true)"
+          if [[ -n "${existing}" ]]; then
+            echo "PR already exists: ${existing}"
+            echo "PR_URL=${existing}" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+
+          url="$(gh pr create \
+            --repo typst/packages \
+            --base main \
+            --head "${REGISTRY_OWNER}:${BRANCH}" \
+            --title "${PKG_NAME}:${PKG_VERSION}" \
+            --body "Automated publish from ${GITHUB_REPOSITORY}@${GITHUB_SHA}\n\nTag: ${GITHUB_REF_NAME}" \
+          )"
+
+          echo "PR_URL=${url}" >> "${GITHUB_ENV}"
+
+      - name: Job summary
+        run: |
+          set -euo pipefail
+          {
+            echo "## Typst registry publish"
+            echo ""
+            echo "- Package: \`${PKG_NAME}\`"
+            echo "- Version: \`${PKG_VERSION}\`"
+            echo "- Tag: \`${GITHUB_REF_NAME}\`"
+            if [[ -n "${PR_URL:-}" ]]; then
+              echo "- PR: ${PR_URL}"
+            else
+              echo "- PR: (not created)"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
