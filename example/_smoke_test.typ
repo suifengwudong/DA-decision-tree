@@ -3,13 +3,13 @@
 
 #canvas(length: 1cm, {
   let root = decision("root", [Decision],
-    decision-edge([Option A],
+    decision-edge([Option A], mark: [★], mark-color: blue,
       event("e1", [Chance],
-        event-edge(0.8, leaf("a", [$V=0.1$], color: red), label: [Good]),
-        event-edge(0.2, leaf("b", [$V=0.2$], color: red), label: [Bad]),
+        event-edge(0.8, leaf("a", [$V=0.8$], color: red), label: [Good]),
+        event-edge(0.2, leaf("b", [$V=0.1$], color: red), label: [Bad]),
       )
     ),
-    decision-edge([Option B],
+    decision-edge([Option B], mark: [//], mark-color: gray,
       leaf("c", [$V=0.0$], color: red),
     ),
   )

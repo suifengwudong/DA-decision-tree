@@ -42,6 +42,19 @@
 
 `decision-edge` 与 `event-edge` 明确区分两类边：决策节点的边代表"可选方案"（无概率），事件节点的边代表"随机结果"（有概率）。
 
+## Mark 标注
+
+所有节点和边构造器都支持 `mark` 与 `mark-color` 参数，用于在节点旁或边中间绘制符号：
+
+| 惯例 | 含义 | 示例 |
+|---|---|---|
+| `mark: [★]` | 最优决策路径 | `decision-edge([方案A], child, mark: [★], mark-color: blue)` |
+| `mark: [//]` | 已剪枝 / 排除分支 | `decision-edge([方案B], child, mark: [//], mark-color: gray)` |
+| `mark: [!]` | 特殊节点标注 | `event("e1", [机会], ..., mark: [!])` |
+
+- 节点 mark 显示在节点右上角（`mark-offset` 可配置）。
+- 边 mark 显示在边的中点处（覆盖在线上）。
+
 ## 标签支持公式
 
 节点/边标签的 label-body 是任意 Typst `content`，可以直接写数学公式（例如 `[$V = 0.1$]`）。颜色通过 `draw.content(..., wrap: text.with(color))` 套一层样式，不会把内容强制转成字符串。
@@ -49,4 +62,4 @@
 ## 版本
 
 - `0.1.0`：初始版本（含 edge labels 渲染、公式标签支持、默认布局与绘制）。
-- `0.2.0`：新增 `decision` / `event` / `leaf` / `decision-edge` / `event-edge` DSL 构造器，明确区分决策边与事件边。
+- `0.3.0`：实现 `mark` 功能：节点与边均支持 `mark`/`mark-color` 参数；简化 `merge-config`。
