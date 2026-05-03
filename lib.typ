@@ -179,6 +179,50 @@
   }
 }
 
+// ===== DSL CONSTRUCTORS =====
+
+// Leaf node: a terminal node with a value label.
+// Usage: leaf("id", [label])
+#let leaf(id, label, color: black) = (
+  id: id,
+  opt: node-opt(kind: "leaf", labels: (top: (label, color))),
+  children: (),
+)
+
+// Decision node (square): children are decision-edge items representing choices.
+// Usage: decision("id", [label], decision-edge(...), decision-edge(...))
+#let decision(id, label, ..branches, color: black) = (
+  id: id,
+  opt: node-opt(kind: "decision", labels: (top: (label, color))),
+  children: branches.pos(),
+)
+
+// Event node (circle): children are event-edge items representing random outcomes.
+// Usage: event("id", [label], event-edge(...), event-edge(...))
+#let event(id, label, ..outcomes, color: black) = (
+  id: id,
+  opt: node-opt(kind: "event", labels: (top: (label, color))),
+  children: outcomes.pos(),
+)
+
+// Decision edge: links a decision node to a child via a named choice label.
+// Usage: decision-edge([Choice label], child-node)
+#let decision-edge(label, child, color: black) = (
+  edge-labels: (above: (label, color)),
+  child-desc: child,
+)
+
+// Event edge: links an event node to a child with a probability and optional description.
+// Usage: event-edge(0.6, child-node) or event-edge(0.6, child-node, label: [Outcome])
+#let event-edge(prob, child, label: none, prob-color: gray, label-color: black) = {
+  let prob-content = [#prob]
+  let edge-labels = (below: (prob-content, prob-color))
+  if label != none {
+    edge-labels.insert("above", (label, label-color))
+  }
+  (edge-labels: edge-labels, child-desc: child)
+}
+
 // ===== HIGH-LEVEL API =====
 
 // Main entry point: build, layout, and render a decision tree.
