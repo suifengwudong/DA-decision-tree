@@ -1,0 +1,10 @@
+[package]
+name = "da-decision-tree"
+version = "0.1.0"
+entrypoint = "lib.typ"
+authors = ["suifengwudong"]
+license = "MIT"
+description = "Decision tree layout and rendering for Typst (CeTZ-based)"
+keywords = ["decision-tree", "cetz", "diagram"]
+categories = ["components", "visualization"]
+compiler = "0.13.0"
