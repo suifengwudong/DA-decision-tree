@@ -64,3 +64,14 @@
 - `0.1.0`：初始版本（含 edge labels 渲染、公式标签支持、默认布局与绘制）。
 - `0.3.0`：实现 `mark` 功能：节点与边均支持 `mark`/`mark-color` 参数；简化 `merge-config`。
 
+## 发布到 Typst 包仓库（自动化）
+
+仓库包含 GitHub Actions 工作流 `.github/workflows/release.yml`：当你推送标签 `vX.Y.Z` 时，会把当前版本推送到你 fork 的 `typst/packages`（`packages/preview` 路径）并自动在 `typst/packages` 创建 PR。
+
+准备工作：
+- Fork https://github.com/typst/packages 到你的账号（例如 `你的用户名/packages`）。
+- 在本仓库 Secrets 配置 `REGISTRY_TOKEN`（PAT；需要能 push 你的 fork，并能对 `typst/packages` 创建 PR）。
+
+发布步骤：
+1. 更新 `typst.toml` 的 `version`，并补充 `CHANGELOG.md`。
+2. 打标签并推送：`git tag v0.1.1 && git push origin v0.1.1`。
