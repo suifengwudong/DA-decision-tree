@@ -98,6 +98,9 @@ jobs:
           DEFAULT_BRANCH="$(git remote show origin | sed -n 's/.*HEAD branch: //p')"
           DEFAULT_BRANCH="${DEFAULT_BRANCH:-main}"
 
+          echo "Deleting registry branch if it exists: ${BRANCH}"
+          git push origin --delete "${BRANCH}" >/dev/null 2>&1 || true
+
           git config user.name "${GIT_USER_NAME}"
           git config user.email "${GIT_USER_EMAIL}"
 
