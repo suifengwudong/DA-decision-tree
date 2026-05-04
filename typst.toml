@@ -2,7 +2,7 @@
 name = "DA-decision-tree"
 version = "0.1.1"
 entrypoint = "lib.typ"
-authors = ["suifengwudong <https://github.com/suifengwudong>"]
+authors = ["洪晨曦 <https://github.com/suifengwudong>"]
 license = "MIT"
 description = "Decision tree layout and rendering for Typst (CeTZ-based)"
 repository = "https://github.com/suifengwudong/DA-decision-tree"
