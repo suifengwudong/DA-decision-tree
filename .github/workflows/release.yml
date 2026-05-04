@@ -114,7 +114,7 @@ jobs:
           git checkout -b "${BRANCH}"
           git add .
           git commit -m "${PKG_NAME}:${PKG_VERSION}"
-          git push --set-upstream origin "${BRANCH}"
+          git push --force --set-upstream origin "${BRANCH}"
 
       - name: Create PR to typst/packages
         env:
