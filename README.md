@@ -62,7 +62,7 @@
 ## 版本
 
 - `0.1.0`：初始版本（含 edge labels 渲染、公式标签支持、默认布局与绘制）。
-- `0.3.0`：实现 `mark` 功能：节点与边均支持 `mark`/`mark-color` 参数；简化 `merge-config`。
+- `0.1.1`：实现 `mark` 功能：节点与边均支持 `mark`/`mark-color` 参数；简化 `merge-config`。
 
 ## 发布到 Typst 包仓库（自动化）
 
