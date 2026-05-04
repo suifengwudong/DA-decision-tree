@@ -116,31 +116,7 @@ jobs:
           git commit -m "${PKG_NAME}:${PKG_VERSION}"
           git push --force --set-upstream origin "${BRANCH}"
 
-      - name: Create PR to typst/packages
-        env:
-          GH_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
-        run: |
-          set -euo pipefail
 
-          REGISTRY_OWNER="${REGISTRY_REPO%%/*}"
-          BRANCH="${PKG_NAME}-${PKG_VERSION}"
-
-          existing="$(gh pr list --repo typst/packages --head "${REGISTRY_OWNER}:${BRANCH}" --json url --jq '.[0].url' || true)"
-          if [[ -n "${existing}" ]]; then
-            echo "PR already exists: ${existing}"
-            echo "PR_URL=${existing}" >> "${GITHUB_ENV}"
-            exit 0
-          fi
-
-          url="$(gh pr create \
-            --repo typst/packages \
-            --base main \
-            --head "${REGISTRY_OWNER}:${BRANCH}" \
-            --title "${PKG_NAME}:${PKG_VERSION}" \
-            --body "Automated publish from ${GITHUB_REPOSITORY}@${GITHUB_SHA}\n\nTag: ${GITHUB_REF_NAME}" \
-          )"
-
-          echo "PR_URL=${url}" >> "${GITHUB_ENV}"
 
       - name: Job summary
         run: |
