@@ -10,36 +10,20 @@
   (kind: kind, labels: labels, mark: mark, mark-color: mark-color)
 }
 
-#let internal-node(id, opt, children) = (id: id, opt: opt, children: children)
-
 // ===== TREE BUILDING =====
 
-// Parse tree description and build internal structure with edges.
-// Returns (tree-node, edges-list) where edges include from/to IDs and edge-labels.
-#let build-tree(descr, parent-id: none) = {
-  let current-id = descr.id
-  let opt = descr.opt
-  let children-desc = descr.children
-  let child-nodes = ()
-  let edges = ()
+// Build the internal tree: every child is stored together with the labels of
+// the edge that leads to it, so rendering never has to route edges by node id.
+#let build-tree(descr) = (
+  id: descr.id,
+  opt: descr.opt,
+  children: descr.children.map(item => (
+    edge-labels: item.at("edge-labels"),
+    node: build-tree(item.at("child-desc")),
+  )),
+)
 
-  for child-item in children-desc {
-    let (edge-labels, child-dict) = if "child-desc" in child-item {
-      (child-item.at("edge-labels"), child-item.at("child-desc"))
-    } else {
-      (child-item.at(0), child-item.at(1))
-    }
-
-    let (child-struct, child-edges) = build-tree(child-dict, parent-id: current-id)
-    child-nodes.push(child-struct)
-    edges.push((from: current-id, to: child-struct.id, edge-labels: edge-labels))
-    edges += child-edges
-  }
-
-  (internal-node(current-id, opt, child-nodes), edges)
-}
-
-// ===== LAYOUT & RENDERING =====
+// ===== LAYOUT =====
 
 // Default tree rendering configuration
 #let default-tree-config = (
@@ -47,117 +31,171 @@
   ystep: 2.2cm,                    // vertical spacing (siblings)
 
   node-sizes: (
-    decision: 4pt,
-    event: 5pt,
-    leaf: 2.5pt,
+    decision: 4pt,                 // half width of the decision square
+    event: 5pt,                    // radius of the event circle
+    leaf: 2.5pt,                   // radius of the leaf dot
   ),
 
   edge-stroke: black,
   edge-width: 1pt,
+  edge-gap: 1pt,                   // clearance between an edge end and its node outline
 
   label-offset-top: 10pt,          // offset for "top" node labels
   label-offset-right: 10pt,        // offset for "right" node labels
   label-offset-edge: 6pt,          // offset perpendicular to edge for edge labels
   mark-offset: 7pt,                // offset for node mark symbols
+  mark-position: 0.65,             // where an edge mark sits along the edge (0..1)
 )
 
-#let merge-config(user-config) = default-tree-config + if type(user-config) == "dictionary" { user-config } else { (:) }
+// Merge user configuration over the defaults, merging node-sizes key by key
+// so that overriding one node kind keeps the others.
+#let merge-config(user-config) = {
+  let base = default-tree-config
+  if type(user-config) != "dictionary" { return base }
 
-// Assign positions to nodes based on depth and sibling order
+  let merged = base + user-config
+  if "node-sizes" in user-config and type(user-config.node-sizes) == "dictionary" {
+    merged.node-sizes = base.node-sizes + user-config.node-sizes
+  }
+  merged
+}
+
+// Assign positions to nodes based on depth and sibling order.
+// Returns (nodes, edges, span, center):
+//   nodes  — one record per node: (path, id, opt, x, y)
+//   edges  — one record per edge: (from, to, edge-labels), from/to are node paths
+//   span   — number of sibling slots consumed by this subtree
+//   center — slot index of this subtree's center
 #let layout-tree(node, config, path: "0", depth: 0, slot-start: 0) = {
   let xstep = config.xstep
   let ystep = config.ystep
 
   if node.children.len() == 0 {
-    let node-pos = (path: path, id: node.id, opt: node.opt, x: depth * xstep, y: slot-start * ystep)
-    return ((node-pos,), (), 1, slot-start)
+    return (
+      nodes: ((path: path, id: node.id, opt: node.opt, x: depth * xstep, y: slot-start * ystep),),
+      edges: (),
+      span: 1,
+      center: slot-start,
+    )
   }
 
   let nodes = ()
-  let edges-layout = ()
+  let edges = ()
   let child-slot = slot-start
   let first-center = none
   let last-center = none
   let total-span = 0
 
-  let child-index = 0
-  for child in node.children {
-    let child-path = path + "-" + str(child-index)
-    let (child-nodes, child-edges, child-span, child-center) = layout-tree(child, config, path: child-path, depth: depth + 1, slot-start: child-slot)
-    nodes += child-nodes
-    edges-layout += child-edges
-    edges-layout.push((from: path, to: child-path))
-    if first-center == none { first-center = child-center }
-    last-center = child-center
-    child-slot += child-span
-    total-span += child-span
-    child-index += 1
+  for (index, child) in node.children.enumerate() {
+    let child-path = path + "-" + str(index)
+    let sub = layout-tree(child.node, config, path: child-path, depth: depth + 1, slot-start: child-slot)
+
+    nodes += sub.nodes
+    edges += sub.edges
+    edges.push((from: path, to: child-path, edge-labels: child.edge-labels))
+
+    if first-center == none { first-center = sub.center }
+    last-center = sub.center
+    child-slot += sub.span
+    total-span += sub.span
   }
 
-  let center-slot = int((first-center + last-center) / 2)
-  nodes += ((path: path, id: node.id, opt: node.opt, x: depth * xstep, y: center-slot * ystep),)
-  (nodes, edges-layout, total-span, center-slot)
+  // Exact midpoint (may fall between sibling slots) keeps a parent centered
+  // over its first and last child instead of snapping onto one of them.
+  let center-slot = (first-center + last-center) / 2
+  nodes.push((path: path, id: node.id, opt: node.opt, x: depth * xstep, y: center-slot * ystep))
+  (nodes: nodes, edges: edges, span: total-span, center: center-slot)
 }
 
-// Draw a single node based on kind and size from config
-#let draw-node(pos, opt, config) = {
+// ===== RENDERING =====
+
+// Outline of a node: ("rect", half-size) or ("circle", radius).
+#let node-shape(opt, config) = {
   let sizes = config.node-sizes
+  if opt.kind == "decision" { ("rect", sizes.at("decision", default: 4pt)) }
+  else if opt.kind == "event" { ("circle", sizes.at("event", default: 5pt)) }
+  else if opt.kind == "leaf" { ("circle", sizes.at("leaf", default: 2.5pt)) }
+  else { ("circle", 0pt) }
+}
+
+// Fraction of the vector toward the target at which the node outline is hit.
+#let trim-factor(shape, off, gap) = {
+  let (kind, size) = shape
+  let dx = off.at(0)
+  let dy = off.at(1)
+  let unit = 1pt
+  let dist = calc.sqrt((dx / unit) * (dx / unit) + (dy / unit) * (dy / unit)) * unit
+  if dist == 0pt { return 0 }
+
+  let ratio = if kind == "rect" {
+    (size + gap) / calc.max(calc.abs(dx), calc.abs(dy))
+  } else {
+    (size + gap) / dist
+  }
+  calc.min(ratio, 0.5)
+}
+
+// Draw a single node based on its kind.
+#let draw-node(pos, opt, config) = {
+  let (shape, size) = node-shape(opt, config)
 
   if opt.kind == "decision" {
-    let sz = sizes.at("decision", default: 4pt)
-    draw.rect((pos.at(0) - sz, pos.at(1) - sz), (pos.at(0) + sz, pos.at(1) + sz), fill: none, stroke: config.edge-stroke)
+    draw.rect(
+      (pos.at(0) - size, pos.at(1) - size),
+      (pos.at(0) + size, pos.at(1) + size),
+      fill: none,
+      stroke: config.edge-stroke,
+    )
   } else if opt.kind == "event" {
-    let rad = sizes.at("event", default: 5pt)
-    draw.circle(pos, radius: rad, fill: none, stroke: config.edge-stroke)
+    draw.circle(pos, radius: size, fill: none, stroke: config.edge-stroke)
   } else if opt.kind == "leaf" {
-    let rad = sizes.at("leaf", default: 2.5pt)
-    draw.circle(pos, radius: rad, fill: black, stroke: none)
+    draw.circle(pos, radius: size, fill: black, stroke: none)
   }
 }
 
-// Draw all edges with optional labels and marks
-#let draw-edges(node-positions, layout-edges, edges, config) = {
-  let id-to-pos = (:)
-  for item in node-positions {
-    id-to-pos.insert(item.id, (item.x, item.y))
-  }
+// Draw all edges trimmed to the node outlines, with optional labels and marks.
+#let draw-edges(pos, layout-edges, config) = {
+  let gap = config.edge-gap
 
-  for layout-e in layout-edges {
-    let from-item = node-positions.find(item => item.path == layout-e.from)
-    let to-item = node-positions.find(item => item.path == layout-e.to)
-    if from-item != none and to-item != none {
-      draw.line((from-item.x, from-item.y), (to-item.x, to-item.y), stroke: config.edge-stroke)
-    }
-  }
+  for e in layout-edges {
+    let a = pos.at(e.from)
+    let b = pos.at(e.to)
+    let dx = b.x - a.x
+    let dy = b.y - a.y
+    let off = (dx, dy)
 
-  for e in edges {
-    let from-pos = id-to-pos.at(e.from, default: none)
-    let to-pos = id-to-pos.at(e.to, default: none)
+    let from-factor = trim-factor(node-shape(a.opt, config), off, gap)
+    let to-factor = trim-factor(node-shape(b.opt, config), off, gap)
+    let p0 = (a.x + from-factor * dx, a.y + from-factor * dy)
+    let p1 = (b.x - to-factor * dx, b.y - to-factor * dy)
 
-    if from-pos != none and to-pos != none and "edge-labels" in e {
-      let labels = e.edge-labels
-      let mid-x = (from-pos.at(0) + to-pos.at(0)) / 2
-      let mid-y = (from-pos.at(1) + to-pos.at(1)) / 2
-      let offset = config.label-offset-edge
+    draw.line(p0, p1, stroke: config.edge-stroke)
 
-      for (dir, label-data) in labels {
-        let label-body = label-data.at(0)
-        let color = label-data.at(1)
+    let labels = e.edge-labels
+    let mid-x = (p0.at(0) + p1.at(0)) / 2
+    let mid-y = (p0.at(1) + p1.at(1)) / 2
+    let offset = config.label-offset-edge
+    let mark-t = config.mark-position
 
-        if dir == "above" {
-          draw.content((mid-x, mid-y + offset), label-body, anchor: "south", wrap: text.with(color))
-        } else if dir == "below" {
-          draw.content((mid-x, mid-y - offset), label-body, anchor: "north", wrap: text.with(color))
-        } else if dir == "mark" {
-          // Mark symbol drawn directly on the edge (e.g. "★" for optimal, "//" for pruned)
-          draw.content((mid-x, mid-y), label-body, anchor: "center", wrap: text.with(color))
-        }
+    for (dir, label-data) in labels {
+      let label-body = label-data.at(0)
+      let color = label-data.at(1)
+
+      if dir == "above" {
+        draw.content((mid-x, mid-y + offset), label-body, anchor: "south", wrap: text.with(color))
+      } else if dir == "below" {
+        draw.content((mid-x, mid-y - offset), label-body, anchor: "north", wrap: text.with(color))
+      } else if dir == "mark" {
+        // Mark symbol drawn at mark-position along the edge (e.g. "★" optimal, "//" pruned)
+        let mx = p0.at(0) + mark-t * (p1.at(0) - p0.at(0))
+        let my = p0.at(1) + mark-t * (p1.at(1) - p0.at(1))
+        draw.content((mx, my), label-body, anchor: "center", wrap: text.with(color))
       }
     }
   }
 }
 
-// Draw all node labels and marks
+// Draw all node labels and marks.
 #let draw-labels(node-positions, config) = {
   for node-item in node-positions {
     let opt = node-item.opt
@@ -232,14 +270,18 @@
 #let decision-tree(root-desc, config: (:)) = {
   let cfg = merge-config(config)
 
-  let (tree, edges) = build-tree(root-desc)
-  let (node-positions, layout-edges, ..) = layout-tree(tree, cfg)
+  let tree = build-tree(root-desc)
+  let layout = layout-tree(tree, cfg)
+  let nodes = layout.nodes
 
-  draw-edges(node-positions, layout-edges, edges, cfg)
+  let pos = (:)
+  for item in nodes { pos.insert(item.path, (x: item.x, y: item.y, opt: item.opt)) }
 
-  for node-item in node-positions {
-    draw-node((node-item.x, node-item.y), node-item.opt, cfg)
+  draw-edges(pos, layout.edges, cfg)
+
+  for item in nodes {
+    draw-node((item.x, item.y), item.opt, cfg)
   }
 
-  draw-labels(node-positions, cfg)
+  draw-labels(nodes, cfg)
 }
